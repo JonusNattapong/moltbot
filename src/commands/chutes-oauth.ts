@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 
+// @ts-ignore
 import type { OAuthCredentials } from "@mariozechner/pi-ai";
 
 import type { ChutesOAuthAppConfig } from "../agents/chutes-oauth.js";
@@ -43,76 +44,83 @@ async function waitForLocalCallback(params: {
 }): Promise<{ code: string; state: string }> {
   const redirectUrl = new URL(params.redirectUri);
   if (redirectUrl.protocol !== "http:") {
-    throw new Error(`Chutes OAuth redirect URI must be http:// (got ${params.redirectUri})`);
+    throw new Error(
+      `Chutes OAuth redirect URI must be http:// (got ${params.redirectUri})`,
+    );
   }
   const hostname = redirectUrl.hostname || "127.0.0.1";
   const port = redirectUrl.port ? Number.parseInt(redirectUrl.port, 10) : 80;
   const expectedPath = redirectUrl.pathname || "/";
 
-  return await new Promise<{ code: string; state: string }>((resolve, reject) => {
-    let timeout: NodeJS.Timeout | null = null;
-    const server = createServer((req, res) => {
-      try {
-        const requestUrl = new URL(req.url ?? "/", redirectUrl.origin);
-        if (requestUrl.pathname !== expectedPath) {
-          res.statusCode = 404;
-          res.setHeader("Content-Type", "text/plain; charset=utf-8");
-          res.end("Not found");
-          return;
-        }
+  return await new Promise<{ code: string; state: string }>(
+    (resolve, reject) => {
+      // @ts-ignore
+      let timeout: NodeJS.Timeout | null = null;
+      const server = createServer((req: any, res: any) => {
+        try {
+          const requestUrl = new URL(req.url ?? "/", redirectUrl.origin);
+          if (requestUrl.pathname !== expectedPath) {
+            res.statusCode = 404;
+            res.setHeader("Content-Type", "text/plain; charset=utf-8");
+            res.end("Not found");
+            return;
+          }
 
-        const code = requestUrl.searchParams.get("code")?.trim();
-        const state = requestUrl.searchParams.get("state")?.trim();
+          const code = requestUrl.searchParams.get("code")?.trim();
+          const state = requestUrl.searchParams.get("state")?.trim();
 
-        if (!code) {
-          res.statusCode = 400;
-          res.setHeader("Content-Type", "text/plain; charset=utf-8");
-          res.end("Missing code");
-          return;
-        }
-        if (!state || state !== params.expectedState) {
-          res.statusCode = 400;
-          res.setHeader("Content-Type", "text/plain; charset=utf-8");
-          res.end("Invalid state");
-          return;
-        }
+          if (!code) {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "text/plain; charset=utf-8");
+            res.end("Missing code");
+            return;
+          }
+          if (!state || state !== params.expectedState) {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "text/plain; charset=utf-8");
+            res.end("Invalid state");
+            return;
+          }
 
-        res.statusCode = 200;
-        res.setHeader("Content-Type", "text/html; charset=utf-8");
-        res.end(
-          [
-            "<!doctype html>",
-            "<html><head><meta charset='utf-8' /></head>",
-            "<body><h2>Chutes OAuth complete</h2>",
-            "<p>You can close this window and return to moltbot.</p></body></html>",
-          ].join(""),
-        );
-        if (timeout) clearTimeout(timeout);
-        server.close();
-        resolve({ code, state });
-      } catch (err) {
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "text/html; charset=utf-8");
+          res.end(
+            [
+              "<!doctype html>",
+              "<html><head><meta charset='utf-8' /></head>",
+              "<body><h2>Chutes OAuth complete</h2>",
+              "<p>You can close this window and return to moltbot.</p></body></html>",
+            ].join(""),
+          );
+          if (timeout) clearTimeout(timeout);
+          server.close();
+          resolve({ code, state });
+        } catch (err) {
+          if (timeout) clearTimeout(timeout);
+          server.close();
+          reject(err);
+        }
+      });
+
+      server.once("error", (err: any) => {
         if (timeout) clearTimeout(timeout);
         server.close();
         reject(err);
-      }
-    });
+      });
+      server.listen(port, hostname, () => {
+        params.onProgress?.(
+          `Waiting for OAuth callback on ${redirectUrl.origin}${expectedPath}…`,
+        );
+      });
 
-    server.once("error", (err) => {
-      if (timeout) clearTimeout(timeout);
-      server.close();
-      reject(err);
-    });
-    server.listen(port, hostname, () => {
-      params.onProgress?.(`Waiting for OAuth callback on ${redirectUrl.origin}${expectedPath}…`);
-    });
-
-    timeout = setTimeout(() => {
-      try {
-        server.close();
-      } catch {}
-      reject(new Error("OAuth callback timeout"));
-    }, params.timeoutMs);
-  });
+      timeout = setTimeout(() => {
+        try {
+          server.close();
+        } catch {}
+        reject(new Error("OAuth callback timeout"));
+      }, params.timeoutMs);
+    },
+  );
 }
 
 export async function loginChutes(params: {
@@ -127,7 +135,8 @@ export async function loginChutes(params: {
   fetchFn?: typeof fetch;
 }): Promise<OAuthCredentials> {
   const createPkce = params.createPkce ?? generateChutesPkce;
-  const createState = params.createState ?? (() => randomBytes(16).toString("hex"));
+  const createState =
+    params.createState ?? (() => randomBytes(16).toString("hex"));
 
   const { verifier, challenge } = createPkce();
   const state = createState();

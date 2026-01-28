@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
-import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
+declare const process: any;
+import {
+  resolveAgentWorkspaceDir,
+  resolveDefaultAgentId,
+} from "../../agents/agent-scope.js";
 import type { ChannelPluginCatalogEntry } from "../../channels/plugins/catalog.js";
 import type { MoltbotConfig } from "../../config/config.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
@@ -49,7 +53,10 @@ function resolveLocalPath(
   return null;
 }
 
-function addPluginLoadPath(cfg: MoltbotConfig, pluginPath: string): MoltbotConfig {
+function addPluginLoadPath(
+  cfg: MoltbotConfig,
+  pluginPath: string,
+): MoltbotConfig {
   const existing = cfg.plugins?.load?.paths ?? [];
   const merged = Array.from(new Set([...existing, pluginPath]));
   return {
@@ -71,7 +78,11 @@ async function promptInstallChoice(params: {
   prompter: WizardPrompter;
 }): Promise<InstallChoice> {
   const { entry, localPath, prompter, defaultChoice } = params;
-  const localOptions: Array<{ value: InstallChoice; label: string; hint?: string }> = localPath
+  const localOptions: Array<{
+    value: InstallChoice;
+    label: string;
+    hint?: string;
+  }> = localPath
     ? [
         {
           value: "local",
@@ -80,11 +91,12 @@ async function promptInstallChoice(params: {
         },
       ]
     : [];
-  const options: Array<{ value: InstallChoice; label: string; hint?: string }> = [
-    { value: "npm", label: `Download from npm (${entry.install.npmSpec})` },
-    ...localOptions,
-    { value: "skip", label: "Skip for now" },
-  ];
+  const options: Array<{ value: InstallChoice; label: string; hint?: string }> =
+    [
+      { value: "npm", label: `Download from npm (${entry.install.npmSpec})` },
+      ...localOptions,
+      { value: "skip", label: "Skip for now" },
+    ];
   const initialValue: InstallChoice =
     defaultChoice === "local" && !localPath ? "npm" : defaultChoice;
   return await prompter.select<InstallChoice>({
@@ -149,8 +161,8 @@ export async function ensureOnboardingPluginInstalled(params: {
   const result = await installPluginFromNpmSpec({
     spec: entry.install.npmSpec,
     logger: {
-      info: (msg) => runtime.log?.(msg),
-      warn: (msg) => runtime.log?.(msg),
+      info: (msg: string) => runtime.log?.(msg),
+      warn: (msg: string) => runtime.log?.(msg),
     },
   });
 
@@ -193,17 +205,18 @@ export function reloadOnboardingPluginRegistry(params: {
   workspaceDir?: string;
 }): void {
   const workspaceDir =
-    params.workspaceDir ?? resolveAgentWorkspaceDir(params.cfg, resolveDefaultAgentId(params.cfg));
+    params.workspaceDir ??
+    resolveAgentWorkspaceDir(params.cfg, resolveDefaultAgentId(params.cfg));
   const log = createSubsystemLogger("plugins");
   loadMoltbotPlugins({
     config: params.cfg,
     workspaceDir,
     cache: false,
     logger: {
-      info: (msg) => log.info(msg),
-      warn: (msg) => log.warn(msg),
-      error: (msg) => log.error(msg),
-      debug: (msg) => log.debug(msg),
+      info: (msg: string) => log.info(msg),
+      warn: (msg: string) => log.warn(msg),
+      error: (msg: string) => log.error(msg),
+      debug: (msg: string) => log.debug(msg),
     },
   });
 }

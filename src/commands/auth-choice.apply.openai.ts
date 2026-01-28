@@ -1,4 +1,6 @@
+// @ts-ignore
 import { loginOpenAICodex } from "@mariozechner/pi-ai";
+declare const process: any;
 import { resolveEnvApiKey } from "../agents/model-auth.js";
 import { upsertSharedEnvVar } from "../infra/env-file.js";
 import { isRemoteEnvironment } from "./oauth-env.js";
@@ -7,9 +9,16 @@ import {
   normalizeApiKeyInput,
   validateApiKeyInput,
 } from "./auth-choice.api-key.js";
-import type { ApplyAuthChoiceParams, ApplyAuthChoiceResult } from "./auth-choice.apply.js";
+import type {
+  ApplyAuthChoiceParams,
+  ApplyAuthChoiceResult,
+} from "./auth-choice.apply.js";
 import { createVpsAwareOAuthHandlers } from "./oauth-flow.js";
-import { applyAuthProfileConfig, writeOAuthCredentials } from "./onboard-auth.js";
+import {
+  applyAuthProfileConfig,
+  ensureAuthProfileStore,
+  writeOAuthCredentials,
+} from "./onboard-auth.js";
 import { openUrl } from "./onboard-helpers.js";
 import {
   applyOpenAICodexModelDefault,
@@ -96,6 +105,29 @@ export async function applyAuthChoiceOpenAI(
           ].join("\n"),
       "OpenAI Codex OAuth",
     );
+    const store = ensureAuthProfileStore(params.agentDir, {
+      allowKeychainPrompt: false,
+    });
+    const existing = store.profiles["openai-codex:default"];
+    if (existing && existing.type === "oauth") {
+      const useExisting = await params.prompter.confirm({
+        message: `Use existing OpenAI Codex authentication (${existing.email ?? "authorized"})?`,
+        initialValue: true,
+      });
+      if (useExisting) {
+        nextConfig = applyAuthProfileConfig(nextConfig, {
+          profileId: "openai-codex:default",
+          provider: "openai-codex",
+          mode: "oauth",
+        });
+        if (params.setDefaultModel) {
+          const applied = applyOpenAICodexModelDefault(nextConfig);
+          nextConfig = applied.next;
+        }
+        return { config: nextConfig };
+      }
+    }
+
     const spin = params.prompter.progress("Starting OAuth flow…");
     try {
       const { onAuth, onPrompt } = createVpsAwareOAuthHandlers({
@@ -110,7 +142,7 @@ export async function applyAuthChoiceOpenAI(
       const creds = await loginOpenAICodex({
         onAuth,
         onPrompt,
-        onProgress: (msg) => spin.update(msg),
+        onProgress: (msg: string) => spin.update(msg),
       });
       spin.stop("OpenAI OAuth complete");
       if (creds) {

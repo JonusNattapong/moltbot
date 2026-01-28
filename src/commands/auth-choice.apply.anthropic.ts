@@ -1,12 +1,23 @@
 import { upsertAuthProfile } from "../agents/auth-profiles.js";
+declare const process: any;
 import {
   formatApiKeyPreview,
   normalizeApiKeyInput,
   validateApiKeyInput,
 } from "./auth-choice.api-key.js";
-import type { ApplyAuthChoiceParams, ApplyAuthChoiceResult } from "./auth-choice.apply.js";
-import { buildTokenProfileId, validateAnthropicSetupToken } from "./auth-token.js";
-import { applyAuthProfileConfig, setAnthropicApiKey } from "./onboard-auth.js";
+import type {
+  ApplyAuthChoiceParams,
+  ApplyAuthChoiceResult,
+} from "./auth-choice.apply.js";
+import {
+  buildTokenProfileId,
+  validateAnthropicSetupToken,
+} from "./auth-token.js";
+import {
+  applyAuthProfileConfig,
+  ensureAuthProfileStore,
+  setAnthropicApiKey,
+} from "./onboard-auth.js";
 
 export async function applyAuthChoiceAnthropic(
   params: ApplyAuthChoiceParams,
@@ -18,9 +29,10 @@ export async function applyAuthChoiceAnthropic(
   ) {
     let nextConfig = params.config;
     await params.prompter.note(
-      ["Run `claude setup-token` in your terminal.", "Then paste the generated token below."].join(
-        "\n",
-      ),
+      [
+        "Run `claude setup-token` in your terminal.",
+        "Then paste the generated token below.",
+      ].join("\n"),
       "Anthropic setup-token",
     );
 
@@ -59,7 +71,10 @@ export async function applyAuthChoiceAnthropic(
   }
 
   if (params.authChoice === "apiKey") {
-    if (params.opts?.tokenProvider && params.opts.tokenProvider !== "anthropic") {
+    if (
+      params.opts?.tokenProvider &&
+      params.opts.tokenProvider !== "anthropic"
+    ) {
       return null;
     }
 
@@ -68,7 +83,10 @@ export async function applyAuthChoiceAnthropic(
     const envKey = process.env.ANTHROPIC_API_KEY?.trim();
 
     if (params.opts?.token) {
-      await setAnthropicApiKey(normalizeApiKeyInput(params.opts.token), params.agentDir);
+      await setAnthropicApiKey(
+        normalizeApiKeyInput(params.opts.token),
+        params.agentDir,
+      );
       hasCredential = true;
     }
 
@@ -82,12 +100,32 @@ export async function applyAuthChoiceAnthropic(
         hasCredential = true;
       }
     }
+
+    if (!hasCredential) {
+      const store = ensureAuthProfileStore(params.agentDir, {
+        allowKeychainPrompt: false,
+      });
+      const existing = store.profiles["anthropic:default"];
+      if (existing && existing.type === "api_key") {
+        const useExisting = await params.prompter.confirm({
+          message: `Use existing Anthropic API key (${formatApiKeyPreview(existing.key)})?`,
+          initialValue: true,
+        });
+        if (useExisting) {
+          hasCredential = true;
+        }
+      }
+    }
+
     if (!hasCredential) {
       const key = await params.prompter.text({
         message: "Enter Anthropic API key",
         validate: validateApiKeyInput,
       });
-      await setAnthropicApiKey(normalizeApiKeyInput(String(key)), params.agentDir);
+      await setAnthropicApiKey(
+        normalizeApiKeyInput(String(key)),
+        params.agentDir,
+      );
     }
     nextConfig = applyAuthProfileConfig(nextConfig, {
       profileId: "anthropic:default",

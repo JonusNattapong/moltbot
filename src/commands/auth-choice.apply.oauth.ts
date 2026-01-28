@@ -1,8 +1,16 @@
 import { isRemoteEnvironment } from "./oauth-env.js";
-import type { ApplyAuthChoiceParams, ApplyAuthChoiceResult } from "./auth-choice.apply.js";
+declare const process: any;
+import type {
+  ApplyAuthChoiceParams,
+  ApplyAuthChoiceResult,
+} from "./auth-choice.apply.js";
 import { loginChutes } from "./chutes-oauth.js";
 import { createVpsAwareOAuthHandlers } from "./oauth-flow.js";
-import { applyAuthProfileConfig, writeOAuthCredentials } from "./onboard-auth.js";
+import {
+  applyAuthProfileConfig,
+  ensureAuthProfileStore,
+  writeOAuthCredentials,
+} from "./onboard-auth.js";
 import { openUrl } from "./onboard-helpers.js";
 
 export async function applyAuthChoiceOAuth(
@@ -12,8 +20,10 @@ export async function applyAuthChoiceOAuth(
     let nextConfig = params.config;
     const isRemote = isRemoteEnvironment();
     const redirectUri =
-      process.env.CHUTES_OAUTH_REDIRECT_URI?.trim() || "http://127.0.0.1:1456/oauth-callback";
-    const scopes = process.env.CHUTES_OAUTH_SCOPES?.trim() || "openid profile chutes:invoke";
+      process.env.CHUTES_OAUTH_REDIRECT_URI?.trim() ||
+      "http://127.0.0.1:1456/oauth-callback";
+    const scopes =
+      process.env.CHUTES_OAUTH_SCOPES?.trim() || "openid profile chutes:invoke";
     const clientId =
       process.env.CHUTES_CLIENT_ID?.trim() ||
       String(
@@ -24,6 +34,29 @@ export async function applyAuthChoiceOAuth(
         }),
       ).trim();
     const clientSecret = process.env.CHUTES_CLIENT_SECRET?.trim() || undefined;
+
+    const store = ensureAuthProfileStore(params.agentDir, {
+      allowKeychainPrompt: false,
+    });
+    const existingProfileId = Object.keys(store.profiles).find((id) =>
+      id.startsWith("chutes:"),
+    );
+
+    if (existingProfileId) {
+      const existing = store.profiles[existingProfileId];
+      const useExisting = await params.prompter.confirm({
+        message: `Use existing Chutes authentication (${"email" in existing && existing.email ? existing.email : existingProfileId})?`,
+        initialValue: true,
+      });
+      if (useExisting) {
+        nextConfig = applyAuthProfileConfig(nextConfig, {
+          profileId: existingProfileId,
+          provider: "chutes",
+          mode: "oauth",
+        });
+        return { config: nextConfig };
+      }
+    }
 
     await params.prompter.note(
       isRemote
@@ -64,7 +97,7 @@ export async function applyAuthChoiceOAuth(
         manual: isRemote,
         onAuth,
         onPrompt,
-        onProgress: (msg) => spin.update(msg),
+        onProgress: (msg: string) => spin.update(msg),
       });
 
       spin.stop("Chutes OAuth complete");
